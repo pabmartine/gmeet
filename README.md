@@ -1,1 +1,1 @@
-![snapshot](snapshot.jpg)
+![snapshot](icons/gmeet.svg)
