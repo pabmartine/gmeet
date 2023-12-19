@@ -1,0 +1,9 @@
+{
+  "name": "GMeet",
+  "description": "GNOME Shell Extension for Quick Access to Google Meet",
+  "version": "1.0",
+  "uuid": "gmeet@pabmartine.com",
+  "shell-version": ["40", "45"],
+  "url": "https://github.com/pabmartine/",
+  "settings-schema": "org.gnome.shell.extensions.gmeet"
+}
