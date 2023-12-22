@@ -9,10 +9,9 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 
-export default class GMeetExtension extends Extension {
-
-    // Initialize the extension
-    enable() {
+class GMeetManager {
+    constructor(metadata) {
+        this.metadata = metadata;
         this._bookmarks = [];
         this._indicator = new PanelMenu.Button(0.0, 'Google Meet', false);
         const icon = new St.Icon({
@@ -27,24 +26,9 @@ export default class GMeetExtension extends Extension {
         this._loadBookmarks();
     }
 
-    // Clean up on extension disable
-    disable() {
-        this._indicator.destroy();
-        this._indicator = null;
-    }
-
     // Load bookmarks from a JSON file
     _loadBookmarks() {
-        const metadataFile = Gio.File.new_for_path(
-            GLib.build_filenamev([this.metadata.path, 'metadata.json'])
-        );
-    
-        if (metadataFile.query_exists(null)) {
-            let [success, contents] = metadataFile.load_contents(null);
-            this._hasMetadata = success && contents.length > 0;
-        } else {
-            this._hasMetadata = false;
-        }
+
     
         const bookmarksFile = Gio.File.new_for_path(
             GLib.build_filenamev([this.metadata.path, 'bookmarks.json'])
@@ -192,7 +176,7 @@ export default class GMeetExtension extends Extension {
     // Open a webpage in the default browser
     _openWebPage(url) {
         this._debugLog('_openWebPage: ' + url);
-        let command = `/usr/bin/google-chrome '${url}'`;
+        let command = `xdg-open '${url}'`;
         try {
             GLib.spawn_command_line_async(command);
         } catch (e) {
@@ -214,7 +198,8 @@ export default class GMeetExtension extends Extension {
                 "- 'New Meet': Opens a new Google Meet session in your default browser.\n" +
                 "- 'Add': Allows you to add a new bookmark to your Google Meet sessions. Simply provide a name and a unique code.\n" +
                 "- 'Help': Brings up this help dialog with information about the extension.\n\n" +
-                "To delete a bookmark, simply click on the trash icon next to each bookmark in the menu.\n" +
+                "To delete a bookmark, simply click on the trash icon next to each bookmark in the menu.\n\n" +
+                "This extension is not affiliated, funded, or in any way associated with Google and GMeet.\n" +
                 "For additional support, please contact the extension developer.",
             line_wrap: true
         });
@@ -355,5 +340,26 @@ export default class GMeetExtension extends Extension {
         this._bookmarks.push(newBookmark);
         this._saveBookmarks();
         this._updateMenu();
+    }
+
+    destroy() {
+        if (this._indicator) {
+            this._indicator.destroy();
+            this._indicator = null;
+        }
+        this._bookmarks = null;
+    }
+}
+
+export default class GMeetExtension extends Extension {
+    enable() {
+        this._manager = new GMeetManager(this.metadata);
+    }
+
+    disable() {
+        if (this._manager) {
+            this._manager.destroy();
+            this._manager = null;
+        }
     }
 }
