@@ -100,7 +100,7 @@ class GMeetManager {
         this._addAdditionalMenuItems();
     }
 
-    // Add additional menu items like 'New Meet', 'Add', and 'Help'
+    // Add additional menu items like 'New Meet', 'Add'
     _addAdditionalMenuItems() {
 
         if (this._hasMetadata) {
@@ -108,26 +108,21 @@ class GMeetManager {
             this._indicator.menu.addMenuItem(separator);
         }
 
-        let newMeetItem = new PopupMenu.PopupMenuItem('New Meet');
-        newMeetItem.connect('activate', () => {
-            this._openWebPage("https://meet.google.com/new");
-        });
-        this._indicator.menu.addMenuItem(newMeetItem);
-
-        let secondSeparator = new PopupMenu.PopupSeparatorMenuItem();
-        this._indicator.menu.addMenuItem(secondSeparator);
-
         let addItem = new PopupMenu.PopupMenuItem('Add');
         addItem.connect('activate', () => {
             this._showAddDialog();
         });
         this._indicator.menu.addMenuItem(addItem);
 
-        let helpItem = new PopupMenu.PopupMenuItem('Help');
-        helpItem.connect('activate', () => {
-            this._showHelpDialog();
+        let secondSeparator = new PopupMenu.PopupSeparatorMenuItem();
+        this._indicator.menu.addMenuItem(secondSeparator);
+
+        let newMeetItem = new PopupMenu.PopupMenuItem('New Meet');
+        newMeetItem.connect('activate', () => {
+            this._openWebPage("https://meet.google.com/new");
         });
-        this._indicator.menu.addMenuItem(helpItem);
+        this._indicator.menu.addMenuItem(newMeetItem);
+
 
     }
 
@@ -182,37 +177,6 @@ class GMeetManager {
         } catch (e) {
             this._debugLog(`Failed to open ${url}: ` + e.message);
         }
-    }
-
-    // Show the help dialog
-    _showHelpDialog() {
-        let modal = new ModalDialog.ModalDialog({});
-        let mainContentArea = new St.BoxLayout({ vertical: true });
-        modal.contentLayout.add(mainContentArea);
-
-        let descriptionLabel = new Clutter.Text({
-            text: "Welcome to the Google Meet Extension!\n\n" +
-                "With this extension, you can quickly access your Google Meet bookmarks directly from the Gnome Shell panel. " +
-                "You can add new bookmarks, manage existing ones, and directly open Meet sessions in your browser.\n\n" +
-                "Features:\n" +
-                "- 'New Meet': Opens a new Google Meet session in your default browser.\n" +
-                "- 'Add': Allows you to add a new bookmark to your Google Meet sessions. Simply provide a name and a unique code.\n" +
-                "- 'Help': Brings up this help dialog with information about the extension.\n\n" +
-                "To delete a bookmark, simply click on the trash icon next to each bookmark in the menu.\n\n" +
-                "This extension is not affiliated, funded, or in any way associated with Google and GMeet.\n" +
-                "For additional support, please contact the extension developer.",
-            line_wrap: true
-        });
-        mainContentArea.add_child(descriptionLabel);
-
-        modal.addButton({
-            label: "Close",
-            action: () => {
-                modal.close();
-            }
-        });
-
-        modal.open();
     }
 
 

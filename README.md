@@ -8,7 +8,6 @@ Features:
 
 - 'New Meet': Opens a new Google Meet session in your default browser.
 -  'Add': Allows you to add a new bookmark to your Google Meet sessions. Simply provide a name and a unique code.
-- 'Help': Brings up this help dialog with information about the extension.
 
 To delete a bookmark, simply click on the trash icon next to each bookmark in the menu.
 
