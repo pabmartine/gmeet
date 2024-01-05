@@ -264,7 +264,7 @@ class GMeetManager {
                 codeFormatErrorLabel.visible = !isCodeEmpty && !isValidCode;
 
                 if (isValidName && !isCodeEmpty && isValidCode) {
-                    this._addNewBookmark(name, 'https://meet.google.com/' + code);
+                    this._addNewBookmark(name, code);
                     modal.close();
                 }
             }
