@@ -3,9 +3,10 @@
   "description": "GNOME Shell Extension for Quick Access to Google Meet.\n\nWith this extension, you can quickly access your Google Meet bookmarks directly from the Gnome Shell panel. You can add new bookmarks, manage existing ones, and directly open Meet sessions in your browser.\n\nFeatures:\n- 'New Meet': Opens a new Google Meet session in your default browser.\n- 'Add': Allows you to add a new bookmark to your Google Meet sessions. Simply provide a name and a unique code.\n\nTo delete a bookmark, simply click on the trash icon next to each bookmark in the menu.\n\nThis extension is not affiliated, funded, or in any way associated with Google and GMeet.\n\nFor additional support, please contact the extension developer.",
   "name": "GMeet",
   "shell-version": [
-    "45"
+    "45",
+    "46"
   ],
   "url": "https://github.com/pabmartine/gmeet",
   "uuid": "gmeet@pabmartine.com",
-  "version": 8
+  "version": 14
 }
