@@ -8,12 +8,13 @@ import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-
 class GMeetManager {
     constructor(metadata) {
         this.metadata = metadata;
         this._bookmarks = [];
         this._indicator = new PanelMenu.Button(0.0, 'Google Meet', false);
+        this._horizontalContainer = null;  // Inicializar el contenedor aquí
+
         const icon = new St.Icon({
             gicon: Gio.icon_new_for_string(
                 GLib.build_filenamev([this.metadata.path, 'icons', 'gmeet.svg'])
@@ -28,41 +29,45 @@ class GMeetManager {
 
     // Load bookmarks from a JSON file
     _loadBookmarks() {
+        const bookmarksDir = GLib.build_filenamev([GLib.get_home_dir(), '.gmeet']);
+        const bookmarksFilePath = GLib.build_filenamev([bookmarksDir, 'bookmarks.json']);
+        const bookmarksFile = Gio.File.new_for_path(bookmarksFilePath);
 
-    
-        const bookmarksFile = Gio.File.new_for_path(
-            GLib.build_filenamev([this.metadata.path, 'bookmarks.json'])
-        );
-    
+        // Ensure the directory exists
+        if (!GLib.file_test(bookmarksDir, GLib.FileTest.IS_DIR)) {
+            GLib.mkdir_with_parents(bookmarksDir, 0o755);
+        }
+
+        // Default content for the bookmarks file
+        const defaultBookmarks = JSON.stringify([{ "name": "test", "url": "https://meet.google.com/aaa-bbbb-ccc" }]);
+
         if (!bookmarksFile.query_exists(null)) {
-            // Si el archivo no existe, crea uno vacío
-            let initialContent = JSON.stringify([]);
-            let data = new TextEncoder().encode(initialContent); // Codificar a Uint8Array
+            // If the file does not exist, create it with the default content
+            let data = new TextEncoder().encode(defaultBookmarks); // Encode to Uint8Array
             bookmarksFile.replace_contents_bytes_async(new GLib.Bytes(data), null, false, Gio.FileCreateFlags.NONE, null, (file, result) => {
                 try {
                     file.replace_contents_finish(result);
-                    this._debugLog('Bookmarks file created.');
+                    this._debugLog('Bookmarks file created with default content.');
+                    this._bookmarks = JSON.parse(defaultBookmarks);
+                    this._addBookmarksToMenu();
                 } catch (e) {
                     this._debugLog('Failed to create bookmarks file: ' + e.message);
                 }
             });
-            this._bookmarks = [];
-            return;
-        }
-    
-        bookmarksFile.load_contents_async(null, (file, result) => {
-            try {
-                const [success, data] = file.load_contents_finish(result);
-                if (success) {
-                    this._bookmarks = JSON.parse(new TextDecoder("utf-8").decode(data));
-                    this._addBookmarksToMenu();
+        } else {
+            bookmarksFile.load_contents_async(null, (file, result) => {
+                try {
+                    const [success, data] = file.load_contents_finish(result);
+                    if (success) {
+                        this._bookmarks = JSON.parse(new TextDecoder("utf-8").decode(data));
+                        this._addBookmarksToMenu();
+                    }
+                } catch (e) {
+                    this._debugLog('Failed to load bookmarks: ' + e.message);
                 }
-            } catch (e) {
-                this._debugLog('Failed to load bookmarks: ' + e.message);
-            }
-        });
+            });
+        }
     }
-    
 
     // Add bookmarks to the extension menu
     _addBookmarksToMenu() {
@@ -100,30 +105,72 @@ class GMeetManager {
         this._addAdditionalMenuItems();
     }
 
-    // Add additional menu items like 'New Meet', 'Add'
     _addAdditionalMenuItems() {
+        log("Adding extra menu items");
 
-        if (this._hasMetadata) {
-            let separator = new PopupMenu.PopupSeparatorMenuItem();
-            this._indicator.menu.addMenuItem(separator);
+        // Remove existing separator and button container
+        if (this._separator) {
+            this._separator.destroy();
+            this._separator = null;
         }
 
-        let addItem = new PopupMenu.PopupMenuItem('Add');
-        addItem.connect('activate', () => {
+        if (this._horizontalContainer) {
+            this._horizontalContainer.destroy();
+            this._horizontalContainer = null;
+        }
+
+        // Create horizontal separator
+        // Only add the separator if there are bookmarks
+        if (this._bookmarks.length > 0) {
+            // Create the horizontal separator
+            this._separator = new PopupMenu.PopupSeparatorMenuItem();
+            if (this._separator) {
+                log("Separator created successfully.");
+                this._indicator.menu.addMenuItem(this._separator);
+            } else {
+                log("Error: couldn't create the separator.");
+            }
+        }
+
+        // Create a PopupBaseMenuItem to host the horizontal container
+        let containerMenuItem = new PopupMenu.PopupBaseMenuItem({
+            reactive: false,
+            can_focus: false
+        });
+
+        // Create the horizontal container for buttons
+        this._horizontalContainer = new St.BoxLayout({
+            vertical: false,
+            style_class: 'horizontal-container',
+            x_expand: true
+        });
+
+        containerMenuItem.add_child(this._horizontalContainer);
+
+        // Add button
+        let addItem = new St.Button({
+            label: "Add",
+            style_class: 'popup-menu-item',
+            x_expand: true
+        });
+        addItem.connect('clicked', () => {
             this._showAddDialog();
         });
-        this._indicator.menu.addMenuItem(addItem);
+        this._horizontalContainer.add_child(addItem);
 
-        let secondSeparator = new PopupMenu.PopupSeparatorMenuItem();
-        this._indicator.menu.addMenuItem(secondSeparator);
-
-        let newMeetItem = new PopupMenu.PopupMenuItem('New Meet');
-        newMeetItem.connect('activate', () => {
+        // New button
+        let newMeetItem = new St.Button({
+            label: "New",
+            style_class: 'popup-menu-item',
+            x_expand: true
+        });
+        newMeetItem.connect('clicked', () => {
             this._openWebPage("https://meet.google.com/new");
         });
-        this._indicator.menu.addMenuItem(newMeetItem);
+        this._horizontalContainer.add_child(newMeetItem);
 
-
+        // Add the container menu item to the menu
+        this._indicator.menu.addMenuItem(containerMenuItem);
     }
 
     // Log messages for debugging
@@ -158,7 +205,9 @@ class GMeetManager {
     _saveBookmarks() {
         let jsonString = JSON.stringify(this._bookmarks);
         let data = new GLib.Bytes(jsonString);
-        let file = Gio.File.new_for_path(GLib.build_filenamev([this.metadata.path, 'bookmarks.json']));
+        const bookmarksDir = GLib.build_filenamev([GLib.get_home_dir(), '.gmeet']);
+        const bookmarksFilePath = GLib.build_filenamev([bookmarksDir, 'bookmarks.json']);
+        let file = Gio.File.new_for_path(bookmarksFilePath);
         file.replace_contents_async(data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null, (file, result) => {
             try {
                 file.replace_contents_finish(result);
@@ -179,16 +228,17 @@ class GMeetManager {
         }
     }
 
-
     // Show the add bookmark dialog with input validation
     _showAddDialog() {
+        this._debugLog('Showing add dialog');
+
         let modal = new ModalDialog.ModalDialog({});
 
         let titleLabel = new St.Label({ text: "Add New Google Meet Bookmark", style_class: 'modal-title' });
         modal.contentLayout.add_child(titleLabel);
 
         let mainContentArea = new St.BoxLayout({ vertical: true });
-        modal.contentLayout.add(mainContentArea);
+        modal.contentLayout.add_child(mainContentArea);
 
         let labelWidth = 100;
         let labelMarginRight = 10;
@@ -273,57 +323,29 @@ class GMeetManager {
         modal.open();
     }
 
-    // Validate the format of the code
-    _validateCodeFormat(code) {
-        const regex = /^[a-zA-Z0-9]{3}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{3}$/;
-        return regex.test(code);
-    }
-
     // Add a new bookmark and update the menu
     _addNewBookmark(name, code) {
-        let newUrl = 'https://meet.google.com/' + code;
-        let newBookmark = { name: name, url: newUrl };
+        this._debugLog('Adding new bookmark: ' + name + ' ' + code);
 
-        const bookmarksFile = Gio.File.new_for_path(
-            GLib.build_filenamev([this.metadata.path, 'bookmarks.json'])
-        );
-
-        if (!bookmarksFile.query_exists(null)) {
-            let initialContent = JSON.stringify([]);
-            let data = new GLib.Bytes(initialContent);
-            bookmarksFile.replace_contents(data, null, false, Gio.FileCreateFlags.NONE, null, (res) => {
-                try {
-                    bookmarksFile.replace_contents_finish(res);
-                    this._debugLog('Bookmarks file created.');
-                } catch (e) {
-                    this._debugLog('Failed to create bookmarks file: ' + e.message);
-                }
-            });
-        }
-
-        this._bookmarks.push(newBookmark);
-        this._saveBookmarks();
+        this._bookmarks.push({ name: name, url: `https://meet.google.com/${code}` });
         this._updateMenu();
-    }
-
-    destroy() {
-        if (this._indicator) {
-            this._indicator.destroy();
-            this._indicator = null;
-        }
-        this._bookmarks = null;
+        this._saveBookmarks();
     }
 }
 
-export default class GMeetExtension extends Extension {
+class GMeetExtension extends Extension {
+    constructor(metadata) {
+        super(metadata);
+    }
+
     enable() {
         this._manager = new GMeetManager(this.metadata);
     }
 
     disable() {
-        if (this._manager) {
-            this._manager.destroy();
-            this._manager = null;
-        }
+        this._manager._indicator.destroy();
+        this._manager = null;
     }
 }
+
+export default GMeetExtension;
