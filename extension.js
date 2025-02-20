@@ -97,6 +97,10 @@ class GMeetManager {
                     this._deleteBookmark(index);
                 } else {
                     this._debugLog("web");
+
+                    let clipboard = St.Clipboard.get_default();
+                    clipboard.set_text(St.ClipboardType.CLIPBOARD, bookmark.url);
+
                     this._openWebPage(bookmark.url);
                 }
             });
