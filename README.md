@@ -13,4 +13,4 @@ To delete a bookmark, simply click on the trash icon next to each bookmark in th
 
 For additional support, please contact the extension developer.
 
-![snapshot](images/_image.png)
+![snapshot](images/image.png)
