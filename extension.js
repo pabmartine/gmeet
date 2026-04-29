@@ -29,10 +29,14 @@ class GMeetManager {
         // until I/O completes, or never get items if JSON is invalid.
         this._addBookmarksToMenu();
 
+    }
+
+    startLoadingBookmarks() {
         this._loadBookmarks().catch(err => {
             this._debugLog('Unhandled _loadBookmarks: ' + err.message);
             this._bookmarks = [];
-            this._updateMenu();
+            if (this.extension._manager)
+                this._updateMenu();
         });
     }
 
@@ -65,24 +69,32 @@ class GMeetManager {
 
             if (!bookmarksFile.query_exists(null)) {
                 try {
-                    const data = new TextEncoder().encode(defaultBookmarks);
-                    await bookmarksFile.replace_contents_bytes_async(
-                        new GLib.Bytes(data), null, false, Gio.FileCreateFlags.NONE, null);
+                    // Use synchronous write to avoid Promise/GJS async quirks on login.
+                    bookmarksFile.replace_contents(
+                        defaultBookmarks, null, false, Gio.FileCreateFlags.NONE, null);
                     this._debugLog('Bookmarks file created with default content.');
                 } catch (e) {
                     this._debugLog('Failed to create bookmarks file: ' + e.message);
                 }
                 this._bookmarks = this._parseBookmarksSafe(defaultBookmarks, 'default');
             } else {
-                const [success, bin] = await bookmarksFile.load_contents_async(null);
-                if (success)
-                    this._bookmarks = this._parseBookmarksSafe(new TextDecoder('utf-8').decode(bin), 'bookmarks.json');
-                else
+                const [success, bin] = bookmarksFile.load_contents(null);
+                if (success) {
+                    const text = new TextDecoder('utf-8').decode(bin);
+                    this._bookmarks = this._parseBookmarksSafe(text, 'bookmarks.json');
+                } else {
                     this._bookmarks = [];
+                }
             }
         } catch (e) {
             this._debugLog('Bookmarks load failed: ' + e.message);
             this._bookmarks = [];
+        }
+
+        // If the extension was disabled while loading, abort updating the UI.
+        if (!this.extension._manager) {
+            this._debugLog('_loadBookmarks aborted: manager removed');
+            return;
         }
 
         this._updateMenu();
@@ -112,16 +124,9 @@ class GMeetManager {
             // Handle bookmark selection
             menuItem.connect('activate', () => {
                 this._debugLog("web");
-
-                try {
-                    let clipboard = St.Clipboard.get_default();
-                    clipboard.set_text(St.ClipboardType.CLIPBOARD, bookmark.url);
-                } catch (e) {
-                    let clipboard = Clutter.Clipboard.get_default();
-                    clipboard.set_text(Clutter.ClipboardType.CLIPBOARD, bookmark.url);
-                }
-
-                this._openWebPage(bookmark.url);
+                // Instead of writing to the clipboard directly (privacy/permission concerns),
+                // show a modal with the link so the user can select and copy it manually.
+                this._showLinkDialog(bookmark.url);
             });
         });
 
@@ -205,14 +210,13 @@ class GMeetManager {
     }
 
     // Save bookmarks to the JSON file
-    async _saveBookmarks() {
+    _saveBookmarks() {
         let jsonString = JSON.stringify(this._bookmarks);
-        let data = new GLib.Bytes(new TextEncoder().encode(jsonString));
         const bookmarksDir = GLib.build_filenamev([GLib.get_home_dir(), '.gmeet']);
         const bookmarksFilePath = GLib.build_filenamev([bookmarksDir, 'bookmarks.json']);
         let file = Gio.File.new_for_path(bookmarksFilePath);
         try {
-            await file.replace_contents_async(data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+            file.replace_contents(jsonString, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
         } catch (e) {
             this._debugLog('Failed to save bookmarks: ' + e.message);
         }
@@ -331,18 +335,105 @@ class GMeetManager {
         this._updateMenu();
         this._saveBookmarks();
     }
+
+    // Show a read-only dialog with the link so the user can select and copy it manually.
+    _showLinkDialog(url) {
+        this._debugLog('Showing link dialog for: ' + url);
+
+        // If a modal is already open, close it first
+        if (this._modal) {
+            try { this._modal.close(); } catch (e) { /* ignore */ }
+            this._modal = null;
+        }
+
+        let modal = new ModalDialog.ModalDialog({});
+        this._modal = modal;
+
+        let titleLabel = new St.Label({ text: 'Google Meet Link', style_class: 'modal-title' });
+        modal.contentLayout.add_child(titleLabel);
+
+        let mainContentArea = new St.BoxLayout({ vertical: true });
+        modal.contentLayout.add_child(mainContentArea);
+
+        let urlEntry = new St.Entry({ can_focus: true, style_class: 'link-entry', width: 400 });
+        urlEntry.set_text(url);
+        // prefer readonly so we don't accidentally alter it; still allow selection/focus
+        try { urlEntry.set_editable(false); } catch (e) { /* older St.Entry may not have set_editable */ }
+        mainContentArea.add_child(urlEntry);
+
+        modal.addButton({
+            label: 'Select All',
+            action: () => {
+                try {
+                    urlEntry.grab_key_focus();
+                    urlEntry.select_region(0, url.length);
+                } catch (e) {
+                    /* best-effort selection; ignore if API differs */
+                }
+            }
+        });
+
+        modal.addButton({
+            label: 'Open',
+            action: () => {
+                this._openWebPage(url);
+                try { modal.close(); } catch (e) { /* ignore */ }
+                this._modal = null;
+            }
+        });
+
+        modal.addButton({
+            label: 'Close',
+            action: () => {
+                try { modal.close(); } catch (e) { /* ignore */ }
+                this._modal = null;
+            }
+        });
+
+        modal.open();
+    }
 }
 
 class GMeetExtension extends Extension {
     enable() {
         this._manager = new GMeetManager(this);
+        this._manager.startLoadingBookmarks();
     }
 
     disable() {
-        if (this._manager && this._manager._indicator) {
-            this._manager._indicator.destroy();
-            this._manager = null;
+        if (!this._manager)
+            return;
+
+        // Remove menu items deterministically to avoid lingering references
+        try {
+            if (this._manager._indicator && this._manager._indicator.menu)
+                this._manager._indicator.menu.removeAll();
+        } catch (e) {
+            try { this._manager._indicator && this._manager._indicator.menu && this._manager._indicator.menu.removeAll(); } catch (e) { }
         }
+
+        // Close any open modal
+        try {
+            if (this._manager._modal) {
+                this._manager._modal.close();
+                this._manager._modal = null;
+            }
+        } catch (e) { /* ignore */ }
+
+        // Destroy the top-level indicator
+        try {
+            if (this._manager._indicator) {
+                this._manager._indicator.destroy();
+                this._manager._indicator = null;
+            }
+        } catch (e) { /* ignore */ }
+
+        // Release owned references
+        this._manager._separator = null;
+        this._manager._horizontalContainer = null;
+
+        // Finally drop the manager reference
+        this._manager = null;
     }
 }
 
